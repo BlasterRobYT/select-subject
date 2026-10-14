@@ -29,6 +29,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     the plug-in folder, the ML venv, the model, and log/state files.
   - Safe: touches nothing else (no registry, no GIMP, no images);
     `-Force` skips the prompt.
+- **Security notes** in the README: VirusTotal scanning link and guidance
+  for verifying downloads before running anything.
 - **Alpha matting** (on by default) — refines the raw mask into tighter,
   cleaner edges (measured: 0.47% → 0.34% soft-edge pixels on a 1080p test
   image, identical coverage). Disable with `SELECT_SUBJECT_MATTING=0`.

@@ -56,6 +56,20 @@ registry (nothing was written there). Use `-Force` to skip the Y/N prompt.
 
 > Portable build? Just delete its folder — it's fully self-contained.
 
+## Security / scanning
+This repo is open source — the `.ps1` installers are plain text, so the
+safest "scan" is reading them. If you'd prefer a tool's verdict:
+1. Download the file or zip from a **release** (not from a chat/forum link).
+2. Upload it to **[VirusTotal](https://www.virustotal.com/guide/scan-file/)**
+   — it scans with ~70 antivirus engines at once and shows each result.
+3. GitHub also **scans every repository file with VirusTotal automatically**;
+   the repo page will display a warning banner if anything ever matches.
+
+Nothing in the installer phones home, writes to the registry, or asks for
+admin rights. If a download ever looks modified (different name, added
+files, a `.exe` you didn't expect), **don't run it** — report it and get the
+file again from the GitHub releases page.
+
 ## Portable version (no install, works off a USB drive)
 1. Run **`portable.ps1`** (requires a standalone CPython 3.14 x64 on PATH,
    which it auto-detects). It builds a self-contained folder:
