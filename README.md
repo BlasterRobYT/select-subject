@@ -37,7 +37,7 @@ Double-click **`install.bat`** (or run
    (`%APPDATA%\GIMP\<ver>\plug-ins\select-subject\`), so it works regardless
    of which version PhotoGIMP's config patch targets.
 
-**Restart GIMP** and use **Image → Select Subject**.
+**Restart GIMP** and use **Select → Select Subject**.
 
 > Tip: if the model was already downloaded (e.g. from a previous install),
 > re-run with `-SkipModel` to skip the ~980 MB download.
@@ -77,7 +77,7 @@ file again from the GitHub releases page.
    `plug-ins\select-subject\`, a launcher `.bat`, and a README.
 2. Copy the whole folder to any Windows x64 machine that has GIMP 3.x.
 3. Double-click **`select-subject-portable-gimp.bat`** → GIMP opens with
-   **Image → Select Subject**. No admin, no network, no install.
+   **Select → Select Subject**. No admin, no network, no install.
 
 The launcher sets `SELECT_SUBJECT_HOME` to the portable root; the plug-in
 then finds the bundled `runtime\` Python and `models\` automatically.

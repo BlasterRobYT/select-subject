@@ -327,12 +327,17 @@ class SelectSubject(Gimp.PlugIn):
             name)
         procedure.set_menu_label(_("_Select Subject..."))
         procedure.set_attribution("BlasterRob", "blasterrob@users.noreply.github.com", "2026")
-        # GIMP 3 only allows a fixed set of menu prefixes: <Image>, <Layers>,
-        # <Channels>, <Paths>, <Colormap>, <Brushes>, <Dynamics>,
-        # <MyPaintBrushes>, <Gradients>, <Palettes>, <Patterns>, <ToolPresets>,
-        # <Fonts>, <Buffers>.  "<Select>" is NOT valid (foggify uses
-        # "<Image>/Filters/Decor").  This proc acts on the active layer.
-        procedure.add_menu_path("<Image>")
+        # GIMP 3 menu paths: <Prefix>/<label>/<label>...  The <Prefix>
+        # selects the menu manager (one of <Image>, <Layers>, <Channels>,
+        # <Paths>, <Colormap>, <Brushes>, <Dynamics>, <MyPaintBrushes>,
+        # <Gradients>, <Palettes>, <Patterns>, <ToolPresets>, <Fonts>,
+        # <Buffers>).  Path elements after the prefix are matched by
+        # SUBMENU LABEL (mnemonic stripped), walking the menu tree from that
+        # manager's root (see bundled foggify: "<Image>/Filters/Decor").
+        # "<Image>/Select" targets the top-level "Select" menu of the image
+        # menubar (image-menu.ui), so the item lands inside Select ->
+        # "Select Subject...".  This proc acts on the active layer.
+        procedure.add_menu_path("<Image>/Select")
 
         return procedure
 

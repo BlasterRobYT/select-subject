@@ -14,7 +14,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
     ~1 GB model is loaded once and reused for fast follow-up selections.
   - Non-destructive: result is a normal GIMP selection; original image
     untouched.
-  - Menu: **Image → Select Subject**.
+  - Menu: **Select → Select Subject** (top-level *Select* menu; registered
+    with GIMP 3's `add_menu_path("<Image>/Select")` menu path).
 - **Standalone installer** (`install.bat` → `install.ps1`):
   - Detects GIMP 3.x (registry + PATH), rejects GIMP 2.x.
   - Creates the ML venv with GIMP's bundled Python, installs pinned
