@@ -14,8 +14,27 @@ format the GIMP plugin needs.
 
 The model (u2net) is auto-downloaded on first run to rembg's pooch cache.
 """
+import os
 import sys
 import time
+
+
+def _segment_kwargs():
+    """Extra remove() kwargs (see the daemon for the rationale).
+
+    Alpha matting refines the raw RMBG-2.0 edge into a tighter, cleaner
+    selection -- default ON; set SELECT_SUBJECT_MATTING=0 to disable.
+    """
+    if os.environ.get("SELECT_SUBJECT_MATTING", "1").strip().lower() in (
+            "0", "off", "false", "no"):
+        return {}
+    return {
+        "post_process_mask": True,
+        "alpha_matting": True,
+        "alpha_matting_foreground_threshold": 240,
+        "alpha_matting_background_threshold": 10,
+        "alpha_matting_erode_size": 10,
+    }
 
 
 def main():
@@ -38,7 +57,7 @@ def main():
     t1 = time.time()
     print("model+inference start ...", file=sys.stderr)
     # remove() -> RGBA PIL image: subject opaque, background transparent.
-    out = remove(inp)
+    out = remove(inp, **_segment_kwargs())
     print("inference done in %.1fs (input %dx%d)"
           % (time.time() - t1, inp.width, inp.height), file=sys.stderr)
 

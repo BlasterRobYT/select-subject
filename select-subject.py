@@ -157,6 +157,9 @@ def _model_env():
             bundled = os.path.join(root, "models")
             if os.path.isdir(bundled):
                 env["REMBG_HOME"] = bundled
+    # Alpha matting (default ON: gives the tightest Photoshop-like edges on
+    # clean renders; costs a little CPU).  Override with SELECT_SUBJECT_MATTING=0.
+    env.setdefault("SELECT_SUBJECT_MATTING", "1")
     return env
 
 
