@@ -323,7 +323,7 @@ class SelectSubject(Gimp.PlugIn):
               "replaces the current selection with the detected subject."),
             name)
         procedure.set_menu_label(_("_Select Subject..."))
-        procedure.set_attribution("Rob", "Rob", "2026")
+        procedure.set_attribution("BlasterRob", "blasterrob@users.noreply.github.com", "2026")
         # GIMP 3 only allows a fixed set of menu prefixes: <Image>, <Layers>,
         # <Channels>, <Paths>, <Colormap>, <Brushes>, <Dynamics>,
         # <MyPaintBrushes>, <Gradients>, <Palettes>, <Patterns>, <ToolPresets>,
