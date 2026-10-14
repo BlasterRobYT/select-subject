@@ -8,7 +8,7 @@ model, and returns a selection — non-destructive, exactly like Photoshop.
 
 **Works with both vanilla GIMP and PhotoGIMP.** PhotoGIMP is a config-only
 patch for GIMP 3.0+ (same binary, same plug-in API, same menu system), so
-so this plug-in runs identically under both.
+this plug-in runs identically under both.
 
 ## What it does
 1. Duplicates the image and **flattens only the visible layers** (a copy —
