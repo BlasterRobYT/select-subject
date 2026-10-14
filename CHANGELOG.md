@@ -3,6 +3,21 @@
 All notable changes to **Select Subject** are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- **Linux support (Windows + Linux):** the plug-in now documents and supports
+  a standard Linux install (venv at `~/GIMP/select-subject-env`, plug-in
+  files in `~/.config/GIMP/<ver>/plug-ins/select-subject/`). The daemon and
+  process-spawn code paths were already portable (`os.name`-guarded
+  `creationflags`); this closes the last Windows-only assumption.
+
+### Changed
+- **ML venv discovery is cross-platform:** `Scripts\python.exe` on Windows,
+  `bin/python3` (falling back to `bin/python`) on Linux. Removed the
+  hardcoded developer-only Windows path; the `~/GIMP/select-subject-env`
+  standard location is now used identically on both platforms.
+
 ## [1.0.0] - 2026-10-14
 
 ### Added

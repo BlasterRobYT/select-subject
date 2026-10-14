@@ -100,14 +100,16 @@ def _dbg_write(status_name, image, error_text, tb):
 
 # --- ML runtime location (overridable via environment) -----------------------
 # GIMP's own Python has no numpy/onnxruntime/rembg, so the model runs in a
-# dedicated runtime (a CPython venv).  Resolution order:
+# dedicated runtime (a CPython venv).  Cross-platform (Windows + Linux).
+# Resolution order:
 #   1. SELECT_SUBJECT_PY environment variable (explicit override).
-#   2. $SELECT_SUBJECT_HOME\runtime\Scripts\python.exe  (PORTABLE: the .bat
-#      launcher exports SELECT_SUBJECT_HOME = the portable root, so a
-#      plug-in copied into GIMP's config dir finds the bundled runtime).
-#   3. %USERPROFILE%\GIMP\select-subject-env\Scripts\python.exe  (STANDARD
-#      install location, created by the installer).
-#   4. legacy hardcoded dev path.
+#   2. $SELECT_SUBJECT_HOME/runtime/<venv-python>  (PORTABLE: the launcher
+#      exports SELECT_SUBJECT_HOME = the portable root, so a plug-in copied
+#      into GIMP's config dir finds the bundled runtime).
+#   3. ~/GIMP/select-subject-env/<venv-python>  (STANDARD install location,
+#      created by the installer on Windows; mirror it on Linux).
+# <venv-python> is Scripts\python.exe on Windows, bin/python3 (or
+# bin/python) on Linux.
 def _portable_root():
     root = os.environ.get("SELECT_SUBJECT_HOME", "").strip()
     if root and os.path.isdir(root):
@@ -115,17 +117,23 @@ def _portable_root():
     return ""
 
 
+def _venv_python_relpaths():
+    """OS-appropriate interpreter paths, relative to the venv root."""
+    if os.name == "nt":
+        return [os.path.join("Scripts", "python.exe")]
+    return [os.path.join("bin", "python3"),
+            os.path.join("bin", "python")]
+
+
 def _default_venv_python():
-    candidates = []
+    roots = []
     root = _portable_root()
     if root:
-        candidates.append(os.path.join(root, "runtime", "Scripts",
-                                       "python.exe"))
-    candidates += [
-        os.path.join(os.path.expanduser("~"), "GIMP",
-                     "select-subject-env", "Scripts", "python.exe"),
-        r"C:\Users\rober\GIMP\select-subject-env\Scripts\python.exe",
-    ]
+        roots.append(os.path.join(root, "runtime"))
+    roots.append(os.path.join(os.path.expanduser("~"), "GIMP",
+                              "select-subject-env"))
+    candidates = [os.path.join(r, p) for r in roots
+                  for p in _venv_python_relpaths()]
     for cand in candidates:
         if os.path.isfile(cand):
             return cand
