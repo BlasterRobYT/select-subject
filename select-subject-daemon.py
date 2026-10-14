@@ -61,10 +61,59 @@ def log(msg):
     sys.stderr.flush()
 
 
+def _pick_providers():
+    """Return an explicit execution-provider list when a GPU build of
+    onnxruntime is installed, else None (let rembg decide -- i.e. CPU).
+
+    MIGraphX is checked first: AMD's current GPU wheels
+    (onnxruntime-migraphx) register 'MIGraphXExecutionProvider', while
+    rembg's own auto-detect only looks for 'ROCMExecutionProvider' -- so
+    without this, those wheels would silently fall back to CPU.
+    """
+    try:
+        import onnxruntime as ort
+    except Exception:
+        return None
+    avail = set(ort.get_available_providers())
+    for ep in ("MIGraphXExecutionProvider", "ROCMExecutionProvider",
+               "CUDAExecutionProvider"):
+        if ep in avail:
+            return [ep, "CPUExecutionProvider"]
+    return None
+
+
+def _ensure_model():
+    """Check whether the bria-rmbg model was already downloaded.
+
+    Returns (path, downloaded).  When the model is missing from rembg's
+    cache it is fetched once here (sha256-verified, progress on stderr);
+    when it is present, no network traffic happens at all.
+    """
+    from rembg.sessions.bria_rmbg import BriaRmBgSession as M
+    existing = M.resolve_existing("bria-rmbg.onnx")
+    if existing is not None:
+        return existing, False
+    log("model not cached - downloading bria-rmbg.onnx (one-time, ~1 GB)")
+    return M.download_models(), True
+
+
 def main():
     t0 = time.time()
     from rembg import remove, new_session
-    session = new_session("bria-rmbg")
+    model_path, downloaded = _ensure_model()
+    if downloaded:
+        log("model downloaded to %s" % model_path)
+    else:
+        log("model already downloaded: %s (skipping download)" % model_path)
+    providers = _pick_providers()
+    if providers:
+        log("requesting providers: %s" % ", ".join(providers))
+    session = new_session("bria-rmbg", providers=providers)
+    try:
+        log("active providers: %s"
+            % ", ".join(session.inner_session.get_providers()))
+    except Exception:
+        pass
     load_s = time.time() - t0
     log("model loaded in %.1fs" % load_s)
 

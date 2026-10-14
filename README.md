@@ -19,8 +19,10 @@ so this plug-in runs identically under both.
    image.
 
 **Speed:** ~25 s cold (first run, model load) → **~12 s per 1080p image**
-afterwards. Inference is **CPU-only** (onnxruntime CPU) — no GPU needed,
-but no GPU acceleration either.
+afterwards. Inference is **CPU by default** (onnxruntime CPU) — no GPU
+needed. On Linux with an AMD GPU you can opt into GPU acceleration
+(**MIGraphX/ROCm** build, see *Install (Linux)* below); NVIDIA cards can
+use the `onnxruntime-gpu` build.
 
 ## Requirements
 - **Windows x64 or Linux x64** (Ubuntu/Debian, Arch, Fedora, …)
@@ -45,31 +47,60 @@ Double-click **`install.bat`** (or run
 
 ## Install (Linux)
 
-No installer script is bundled for Linux — it's three steps (Ubuntu/Debian
-shown; Arch/Fedora just swap the package manager):
+Use the bundled script (Ubuntu/Debian, Arch, Fedora, …):
 
 ```bash
-# 1. GIMP 3 + a venv-capable CPython 3.10+
-#    Ubuntu: sudo apt install gimp python3-venv
-#    Arch:   sudo pacman -S gimp python
-# 2. Create the ML venv in the standard location the plug-in looks for:
-python3 -m venv ~/GIMP/select-subject-env
-~/GIMP/select-subject-env/bin/pip install -r requirements.txt
-# 3. Copy the three plug-in files into a subfolder of GIMP's config dir
-#    (GIMP 3.2 shown):
+./setup-ml-venv.sh            # CPU inference (default)
+./setup-ml-venv.sh --rocm     # AMD GPU inference (MIGraphX, see below)
+```
+
+It creates the venv at `~/GIMP/select-subject-env` (override with
+`SELECT_SUBJECT_HOME`), installs the ML stack, and prints the
+onnxruntime version + available execution providers so you can see what
+got installed. Then copy the plug-in into GIMP's config dir:
+
+```bash
 mkdir -p ~/.config/GIMP/3.2/plug-ins/select-subject
 cp select-subject.py select-subject-daemon.py select-subject-worker.py \
    ~/.config/GIMP/3.2/plug-ins/select-subject/
 ```
 
-**Restart GIMP** → **Select → Select Subject**. The ~980 MB model downloads
-automatically on first run to `~/.rembg/models/bria-rmbg/` (override with
+**Restart GIMP** → **Select → Select Subject**. The ~1 GB model downloads
+automatically **on first run only** — the plug-in checks rembg's cache
+first and skips the download when the model is already there (no skip
+flag needed). Cache: `~/.rembg/models/bria-rmbg/` (override with
 `REMBG_HOME`).
 
-**GPU (optional):** inference runs on CPU by default (onnxruntime CPU). With
-an NVIDIA GPU, install `onnxruntime-gpu` in the venv instead and rembg
-auto-detects CUDA. AMD cards need a ROCm build of onnxruntime
-(distribution-dependent); CPU is the reliable default.
+### GPU inference on AMD (ROCm / MIGraphX)
+
+`--rocm` installs `onnxruntime-migraphx` (AMD's current GPU build of
+onnxruntime, from PyPI) instead of the CPU build. Requirements:
+
+- **Linux only** (the wheels are `manylinux x86_64`);
+- **CPython 3.11–3.13** (AMD ships `cp310`–`cp313` wheels). On Arch the
+  default `python3` is newer, so the script looks for
+  `sudo pacman -S python3.12`;
+- the **system ROCm 7.x stack** for your distro. On Arch:
+
+  ```bash
+  sudo pacman -S rocm-hip-sdk rocm-opencl-sdk
+  sudo usermod -aG render,video "$USER"   # log out and back in after
+  rocm-smi                                # sanity check
+  ```
+
+- **RDNA3** cards (RX 7000 series, e.g. 7900 XTX) that fall back to CPU:
+  add `export HSA_OVERRIDE_GFX_VERSION=11.0.0` to your shell rc before
+  starting GIMP.
+
+The plug-in detects the MIGraphX provider automatically (it checks for
+`MIGraphXExecutionProvider`, which rembg's own auto-detect would miss)
+and always falls back to CPU. The daemon log line
+`active providers: ...` shows what actually got used; `rocm-smi` should
+show GPU utilization while a selection runs.
+
+**NVIDIA:** install `onnxruntime-gpu` into the venv instead; the plug-in
+picks CUDA up the same way. **No supported GPU?** CPU inference is the
+reliable default and needs none of the above.
 
 ## Uninstall (one-click)
 Double-click **`uninstall.bat`** (or run
@@ -134,11 +165,19 @@ both — no PhotoGIMP-specific code path exists.
 | `install.ps1` / `install.bat` | Standalone installer |
 | `uninstall.ps1` / `uninstall.bat` | One-click uninstaller |
 | `portable.ps1` | Portable bundle builder |
-| `requirements.txt` | Exact ML package pins |
+| `setup-ml-venv.sh` / `setup-ml-venv.bat` | ML venv setup (Linux: `--rocm` flag for AMD GPU; Windows: CPU) |
+| `requirements.txt` | Exact ML package pins (CPU build — the `--rocm` path installs `onnxruntime-migraphx` instead) |
 
 ## Notes & troubleshooting
 - **First run is slow** (model load ~14 s). That's one-time per daemon
   lifetime; the daemon idles up to 20 min then exits.
+- **Model check:** on every daemon start the plug-in checks rembg's cache
+  for the model and logs `model already downloaded: ... (skipping
+  download)` or `downloading bria-rmbg.onnx (one-time, ~1 GB)` — so the
+  ~1 GB fetch happens exactly once per machine.
+- **Which GPU/CPU is actually in use?** The daemon log prints
+  `active providers: ...` at startup (e.g. `MIGraphXExecutionProvider,
+  CPUExecutionProvider` or plain `CPUExecutionProvider`).
 - **No console windows** should appear during normal use.
 - **Daemon log:** `%TEMP%\select_subject_daemon.log` (Windows) or
   `/tmp/select_subject_daemon.log` (Linux) — check it if a selection is

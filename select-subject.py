@@ -365,6 +365,7 @@ class SelectSubject(Gimp.PlugIn):
         #    throwaway copy; the original image is never touched.  Falls back
         #    to the active drawable if compositing fails for any reason.
         work = None
+        mask_img = None
         try:
             work = image.duplicate()
             composite = work.flatten()
@@ -423,8 +424,11 @@ class SelectSubject(Gimp.PlugIn):
                                         100.0, Gimp.LayerMode.NORMAL)
             snap.insert_layer(snap_layer, None, 0)
             src_roi = Gegl.Rectangle.new(0, 0, layer_w, layer_h)
-            snap_layer.get_buffer().copy(src_roi, Gegl.AbyssPolicy.NONE,
-                                         layer_buf, src_roi)
+            # NOTE: Gegl.Buffer.copy() -- self is the SOURCE.  Copy the
+            # composite's pixels INTO the empty snapshot layer, then
+            # file_save() exports the snapshot below.
+            layer_buf.copy(src_roi, Gegl.AbyssPolicy.NONE,
+                           snap_layer.get_buffer(), src_roi)
             snap_ok = Gimp.file_save(Gimp.RunMode.NONINTERACTIVE, snap,
                                      Gio.File.new_for_path(temp_in), None)
             if not snap_ok or not os.path.isfile(temp_in):
@@ -441,6 +445,14 @@ class SelectSubject(Gimp.PlugIn):
             # -- 2. run the model.  PREFER the resident daemon (model already
             #    in RAM, ~5-10s); if no daemon is available, fall back to the
             #    one-shot worker (reloads the model, ~30s). -----------------
+            # GIMP progress bar: feedback for the long segment phase
+            # (no console window is spawned anywhere in this flow).
+            try:
+                Gimp.progress_init("Running Select Subject…")
+                Gimp.progress_set_text("Segmenting subject…")
+                Gimp.progress_update(0.05)
+            except Exception:
+                pass
             used_daemon = False
             if _ensure_daemon(_VENV_PYTHON):
                 d_ok, d_err = _daemon_segment(temp_in, temp_out)
@@ -471,9 +483,16 @@ class SelectSubject(Gimp.PlugIn):
                             _("Subject segmentation failed (exit %d).\n%s")
                             % (proc.returncode, detail), 0))
 
+            try:
+                Gimp.progress_set_text("Applying selection…")
+                Gimp.progress_update(0.9)
+            except Exception:
+                pass
+
             # -- 3. load the mask (grayscale: white = subject) --------------
             # Use Gimp.file_load (validated in rt_probe.py) rather than
             # Gegl.Buffer.load, then copy the mask's pixels into the channel.
+            log("step3: file_load mask")
             mask_img = Gimp.file_load(Gimp.RunMode.NONINTERACTIVE,
                                       Gio.File.new_for_path(temp_out))
             mask_layers = mask_img.get_layers()
@@ -489,7 +508,8 @@ class SelectSubject(Gimp.PlugIn):
                                        image_w, image_h,
                                        100.0, Gegl.Color.new("white"))
             # position is a REQUIRED arg in GIMP 3 (no default).
-            image.insert_channel(channel, None, 0)
+            ins = image.insert_channel(channel, None, 0)
+            log("step4: channel created + inserted (insert_channel -> %r)" % (ins,))
 
             ch_buf = channel.get_buffer()
             src_rect = Gegl.Rectangle.new(0, 0, layer_w, layer_h)
@@ -497,14 +517,18 @@ class SelectSubject(Gimp.PlugIn):
             # copy() auto-converts between pixel formats (gray -> gray).
             mask_buf.copy(src_rect, Gegl.AbyssPolicy.NONE, ch_buf, dst_rect)
             ch_buf.flush()
+            log("step5: mask copied into channel buffer; channel.update next")
             channel.update(0, 0, image_w, image_h)
+            log("step5: channel.update ok")
 
             # -- 5. apply the channel as the selection (white = selected) ---
             Gimp.context_push()
             image.undo_group_start()
+            log("step6: select_item next")
             image.select_item(Gimp.ChannelOps.REPLACE, channel)
             image.undo_group_end()
             Gimp.context_pop()
+            log("step6: selection applied")
 
             # -- 6. tidy up: drop the helper channel + temp files -----------
             image.remove_channel(channel)
@@ -521,12 +545,17 @@ class SelectSubject(Gimp.PlugIn):
                 GLib.Error.new_literal(Gimp.PlugIn.error_quark(),
                                        _("Select Subject error: %s") % e, 0))
         finally:
-            # Drop the throwaway composite image (and its flattened layer).
-            if work is not None:
-                try:
-                    work.delete()
-                except Exception:
-                    pass
+            try:
+                Gimp.progress_end()
+            except Exception:
+                pass
+            # Drop the throwaway images (composite + loaded mask).
+            for tmp_img in (work, mask_img):
+                if tmp_img is not None:
+                    try:
+                        tmp_img.delete()
+                    except Exception:
+                        pass
             for p in (temp_in, temp_out):
                 try:
                     if os.path.isfile(p):
