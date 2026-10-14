@@ -42,6 +42,20 @@ Double-click **`install.bat`** (or run
 > Tip: if the model was already downloaded (e.g. from a previous install),
 > re-run with `-SkipModel` to skip the ~980 MB download.
 
+## Uninstall (one-click)
+Double-click **`uninstall.bat`** (or run
+`powershell -ExecutionPolicy Bypass -File uninstall.ps1`). It shows you
+exactly what it will remove, asks for confirmation, then removes:
+- the plug-in folder from every GIMP 3.x config dir,
+- the ML venv at `%USERPROFILE%\GIMP\select-subject-env`,
+- the BRIA model at `%LOCALAPPDATA%\rembg\models\bria-rmbg`,
+- small log/state files in `%TEMP%`.
+
+It **does not** touch GIMP itself, your images, other plug-ins, or the
+registry (nothing was written there). Use `-Force` to skip the Y/N prompt.
+
+> Portable build? Just delete its folder — it's fully self-contained.
+
 ## Portable version (no install, works off a USB drive)
 1. Run **`portable.ps1`** (requires a standalone CPython 3.14 x64 on PATH,
    which it auto-detects). It builds a self-contained folder:
@@ -75,6 +89,7 @@ both — no PhotoGIMP-specific code path exists.
 | `select-subject-daemon.py` | Persistent ML daemon (TCP loopback, line-JSON) |
 | `select-subject-worker.py` | One-shot ML fallback (no daemon) |
 | `install.ps1` / `install.bat` | Standalone installer |
+| `uninstall.ps1` / `uninstall.bat` | One-click uninstaller |
 | `portable.ps1` | Portable bundle builder |
 | `requirements.txt` | Exact ML package pins |
 

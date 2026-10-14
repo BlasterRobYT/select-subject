@@ -24,6 +24,11 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Self-contained bundle (`runtime/` venv + `models/` + launcher `.bat`)
     that runs with no system install — USB-drive friendly.
   - Verifies with a real 256×256 inference test.
+- **One-click uninstaller** (`uninstall.bat` → `uninstall.ps1`):
+  - Shows exactly what it will remove, asks for confirmation, then removes
+    the plug-in folder, the ML venv, the model, and log/state files.
+  - Safe: touches nothing else (no registry, no GIMP, no images);
+    `-Force` skips the prompt.
 - **Alpha matting** (on by default) — refines the raw mask into tighter,
   cleaner edges (measured: 0.47% → 0.34% soft-edge pixels on a 1080p test
   image, identical coverage). Disable with `SELECT_SUBJECT_MATTING=0`.
