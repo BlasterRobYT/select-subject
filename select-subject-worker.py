@@ -6,13 +6,13 @@ select-subject ML worker  (runs OUTSIDE GIMP, inside the ML venv)
 Usage:
     python select-subject-worker.py <input_image> <output_mask_png>
 
-Reads an image, runs a U2-Net subject segmentation (rembg), and writes the
+Reads an image, runs BRIA RMBG-2.0 subject segmentation (rembg), and writes the
 subject's ALPHA channel out as a grayscale (L-mode) PNG.  White = subject,
 black = background, with soft anti-aliased edges.  GIMP uses that grayscale
 image as a channel/selection mask (luminance-based), so this is exactly the
 format the GIMP plugin needs.
 
-The model (u2net) is auto-downloaded on first run to rembg's pooch cache.
+The model (bria-rmbg) is auto-downloaded on first run to rembg's pooch cache.
 """
 import os
 import sys

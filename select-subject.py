@@ -20,7 +20,7 @@
 #    Requirements:
 #      * ML venv with rembg+onnxruntime (default path below; override with
 #        the SELECT_SUBJECT_PY / SELECT_SUBJECT_WORKER environment variables).
-#        First run downloads the ~170MB u2net model to rembg's cache.
+#        First run downloads the ~1 GB bria-rmbg model to rembg's cache.
 #
 #    This program is free software: you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
