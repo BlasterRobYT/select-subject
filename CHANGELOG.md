@@ -1,0 +1,44 @@
+# Changelog
+
+All notable changes to **Select Subject** are documented here.
+Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+
+## [1.0.0] - 2026-10-14
+
+### Added
+- **GIMP 3 "Select Subject" plug-in** — AI subject selection in the spirit of
+  Adobe Photoshop's *Select Subject*.
+  - Composites the full visible layer stack (blended, like Photoshop) before
+    segmenting — layers, opacity, and masks all respected.
+  - Uses **BRIA RMBG-2.0** segmentation via a persistent local daemon, so the
+    ~1 GB model is loaded once and reused for fast follow-up selections.
+  - Non-destructive: result is a normal GIMP selection; original image
+    untouched.
+  - Menu: **Image → Select Subject**.
+- **Standalone installer** (`install.bat` → `install.ps1`):
+  - Detects GIMP 3.x (registry + PATH), rejects GIMP 2.x.
+  - Creates the ML venv with GIMP's bundled Python, installs pinned
+    requirements, downloads the BRIA model, copies the plug-in into every
+    GIMP 3.x config version dir, verifies the ML stack.
+- **Portable build** (`portable.ps1`):
+  - Self-contained bundle (`runtime/` venv + `models/` + launcher `.bat`)
+    that runs with no system install — USB-drive friendly.
+  - Verifies with a real 256×256 inference test.
+- **Alpha matting** (on by default) — refines the raw mask into tighter,
+  cleaner edges (measured: 0.47% → 0.34% soft-edge pixels on a 1080p test
+  image, identical coverage). Disable with `SELECT_SUBJECT_MATTING=0`.
+- `requirements.txt` with exact pins (rembg 2.0.85, onnxruntime 1.31.0
+  CPU, numpy 2.5.4, pillow 12.3.0, scipy 1.18.1, scikit-image 0.26.0,
+  pymatting 1.1.16, pooch 1.9.0).
+- `README.md` with install/portable/PhotoGIMP/speed documentation.
+- MIT `LICENSE`.
+
+### Notes
+- Works identically with **vanilla GIMP** and **PhotoGIMP** (both are GIMP
+  3.0+; PhotoGIMP is a config-only patch — the installer handles its versioned
+  config directory automatically).
+- No visible console windows during operation (daemon/worker launched hidden).
+- onnxruntime is CPU-only: expect ~25 s cold start (model load) and ~12 s per
+  1080p image afterwards; matting adds negligible time on clean renders.
+
+[1.0.0]: https://github.com/BlasterRobYT/select-subject/releases/tag/1.0.0
