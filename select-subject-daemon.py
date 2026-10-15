@@ -14,13 +14,17 @@ Protocol (line-delimited JSON over TCP, 127.0.0.1):
     client -> {"cmd": "segment", "in": "<input.png>", "out": "<mask.png>"}
     server -> {"ok": true, "seconds": 7.9, "wh": [w, h]}
              or {"ok": false, "error": "..."}
+    client -> {"cmd": "shutdown"}
+    server -> {"ok": true}   (then the daemon exits immediately)
 
 Liveness / cleanup:
     * Writes <temp>/select_subject_daemon.json = {pid, port, model} once
       the model is loaded (that file is the discovery mechanism).
-    * Exits on its own after IDLE_LIMIT seconds without a request, or
-      after HARD_LIMIT seconds total, and removes the state file -- so
-      nothing lingers after GIMP closes.
+    * The plug-in sends "shutdown" right after a successful segment so
+      the multi-GB model RAM is released as soon as masking is done.
+    * Backstops: exits on its own after IDLE_LIMIT seconds without a
+      request, or after HARD_LIMIT seconds total, and removes the state
+      file -- so nothing lingers after GIMP closes.
 """
 import json
 import os
@@ -30,7 +34,7 @@ import tempfile
 import time
 
 STATE = os.path.join(tempfile.gettempdir(), "select_subject_daemon.json")
-IDLE_LIMIT = 20 * 60    # exit after 20 min idle
+IDLE_LIMIT = 5 * 60     # 5 min (backstop; the plug-in sends 'shutdown' after each segment)
 HARD_LIMIT = 2 * 3600   # exit after 2 h total
 
 
@@ -100,6 +104,7 @@ def _ensure_model():
 def main():
     t0 = time.time()
     from rembg import remove, new_session
+    import onnxruntime as ort
     model_path, downloaded = _ensure_model()
     if downloaded:
         log("model downloaded to %s" % model_path)
@@ -108,7 +113,21 @@ def main():
     providers = _pick_providers()
     if providers:
         log("requesting providers: %s" % ", ".join(providers))
-    session = new_session("bria-rmbg", providers=providers)
+    # onnxruntime's default memory arena pre-allocates and then HOLDS
+    # several GB until process exit -- that is what this daemon pinned at
+    # 8-13 GB resident.  The daemon is short-lived now (the plug-in sends
+    # 'shutdown' right after each segment), but even a transient 13 GB
+    # spike is unacceptable on a 32 GB machine, so disable the arena and
+    # let ORT free per-tensor memory as it goes (~1-2 GB instead).
+    sess_opts = ort.SessionOptions()
+    # ORT >= 1.20 renamed enable_mem_arena -> enable_cpu_mem_arena;
+    # set whichever attribute this build has.
+    for _attr in ("enable_cpu_mem_arena", "enable_mem_arena"):
+        if hasattr(sess_opts, _attr):
+            setattr(sess_opts, _attr, False)
+            break
+    sess_opts.enable_mem_pattern = False
+    session = new_session("bria-rmbg", providers=providers, sess_opts=sess_opts)
     try:
         log("active providers: %s"
             % ", ".join(session.inner_session.get_providers()))
@@ -141,6 +160,7 @@ def main():
             except socket.timeout:
                 continue
             conn.settimeout(300)
+            shutdown = False
             try:
                 req = json.loads(conn.recv(65536).decode("utf-8"))
                 cmd = req.get("cmd")
@@ -156,6 +176,13 @@ def main():
                     resp = {"ok": True,
                             "seconds": round(time.time() - t, 1),
                             "wh": [img.width, img.height]}
+                elif cmd == "shutdown":
+                    # The plug-in calls this after a successful segment so
+                    # the model RAM is released immediately, not after the
+                    # idle timeout.
+                    log("shutdown requested by plug-in; exiting")
+                    resp = {"ok": True}
+                    shutdown = True
                 else:
                     resp = {"ok": False, "error": "unknown cmd %r" % cmd}
             except Exception as e:  # noqa: BLE001 - report back to client
@@ -169,6 +196,8 @@ def main():
                     conn.close()
                 except OSError:
                     pass
+            if shutdown:
+                break
             last = time.time()
     finally:
         try:
@@ -176,8 +205,17 @@ def main():
         except OSError:
             pass
         try:
-            os.remove(STATE)
-        except OSError:
+            # Only remove the state file if it still names US: a faster
+            # replacement daemon may have written its own state file by
+            # the time we get here (rapid successive runs).  (Read, CLOSE,
+            # then unlink -- Windows refuses to delete a file that still
+            # has an open handle.)
+            pid_in_state = -1
+            with open(STATE, "r", encoding="utf-8") as fh:
+                pid_in_state = int(json.load(fh).get("pid", -1))
+            if pid_in_state == os.getpid():
+                os.remove(STATE)
+        except Exception:
             pass
 
 

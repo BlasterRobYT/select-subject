@@ -118,9 +118,18 @@ def _portable_root():
 
 
 def _venv_python_relpaths():
-    """OS-appropriate interpreter paths, relative to the venv root."""
+    """OS-appropriate interpreter paths, relative to the venv root.
+
+    Windows: prefer pythonw.exe.  It is a GUI-subsystem binary, so neither
+    it nor any child it spawns can ever be allocated a console.  This
+    venv's python.exe is a launcher stub that re-execs itself as a child;
+    when spawned from GIMP (a console-less GUI process), the re-exec child
+    gets a brand-new console allocated -> the blank terminal window that
+    used to pop up on every Select Subject run.
+    """
     if os.name == "nt":
-        return [os.path.join("Scripts", "python.exe")]
+        return [os.path.join("Scripts", "pythonw.exe"),
+                os.path.join("Scripts", "python.exe")]
     return [os.path.join("bin", "python3"),
             os.path.join("bin", "python")]
 
@@ -178,8 +187,16 @@ def _model_env():
 # (select-subject-daemon.py) runs in the SAME venv, keeps the model resident
 # in RAM, and answers line-delimited JSON requests over a loopback TCP
 # socket.  The plug-in spawns it lazily on first use; the daemon writes a
-# state file and self-terminates after 20 min idle / 2 h total, so nothing
-# lingers after GIMP closes.
+# state file and exits right after the plug-in sends it a 'shutdown'
+# (sent after each successful segment), with 5 min idle / 2 h total as
+# backstops -- so the multi-GB model RAM is released as soon as masking
+# is done.
+#
+# Old-daemon policy: if a new run finds a stale daemon (crashed, wedged,
+# or dying from the previous run's shutdown), it is killed and replaced --
+# a rapid second click never fights over a half-dead daemon.  Only a live,
+# responsive leftover (previous segment failed, no shutdown sent) is
+# reused, keeping failed-run retries fast.
 # ---------------------------------------------------------------------------
 DAEMON_STATE = os.path.join(tempfile.gettempdir(),
                             "select_subject_daemon.json")
@@ -211,17 +228,56 @@ def _daemon_alive(state):
         return False
 
 
-def _ensure_daemon(venv_python):
-    """Return True if a live daemon is running (reused or freshly spawned)."""
-    state_path = DAEMON_STATE
-    # Reuse a live daemon if one exists.
+def _read_state():
+    """Return the daemon state dict from the state file, or None."""
     try:
-        with open(state_path, "r", encoding="utf-8") as fh:
+        with open(DAEMON_STATE, "r", encoding="utf-8") as fh:
             st = json.load(fh)
-        if _daemon_alive(st):
-            return True
+        if isinstance(st, dict) and st.get("port"):
+            return st
     except Exception:
         pass
+    return None
+
+
+def _remove_state():
+    try:
+        os.remove(DAEMON_STATE)
+    except Exception:
+        pass
+
+
+def _ensure_daemon(venv_python):
+    """Return True if a daemon is available to serve a segment.
+
+    Daemon policy (per user requirement): an OLD daemon is never fought
+    over -- a rapid second run kills the old one and spawns a fresh
+    daemon.  The only exception is a live, responsive leftover from a
+    run whose segment FAILED (no 'shutdown' was ever sent to it): that
+    daemon is healthy with the model already in RAM, so reusing it keeps
+    the retry fast (~5-10 s instead of the ~15-25 s model load).
+    A leftover that is dying (rapid re-run: it already got 'shutdown'
+    and exits on its own in <1 s) never answers a ping -- it processed
+    the shutdown first -- so it is treated as unresponsive and retired.
+    """
+    st = _read_state()
+    if st is not None:
+        if _daemon_alive(st):
+            # It answered.  A daemon that already received 'shutdown'
+            # exits within ~1 s, so a second probe after a short pause
+            # separates "healthy leftover" (still alive -> reuse) from
+            # "dying leftover" (gone -> spawn).
+            time.sleep(1.2)
+            if _daemon_alive(st):
+                log("reusing live daemon pid=%s port=%s"
+                    % (st.get("pid"), st.get("port")))
+                return True
+            log("old daemon finished exiting; spawning fresh one")
+        else:
+            # Unresponsive: crashed, wedged mid-segment, or mid-exit.
+            # Kill the old one, then spawn a fresh daemon.
+            _daemon_hardkill(st)
+        _remove_state()
     # Otherwise spawn a fresh one.
     daemon_py = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "select-subject-daemon.py")
@@ -260,26 +316,24 @@ def _ensure_daemon(venv_python):
     # Wait up to ~75 s for the model to load and the state file to appear.
     deadline = time.time() + 75
     while time.time() < deadline:
-        try:
-            with open(state_path, "r", encoding="utf-8") as fh:
-                st = json.load(fh)
-            if _daemon_alive(st):
-                log("daemon ready pid=%s port=%s"
-                    % (st.get("pid"), st.get("port")))
-                return True
-        except Exception:
-            pass
+        st = _read_state()
+        if st is not None and _daemon_alive(st):
+            log("daemon ready pid=%s port=%s"
+                % (st.get("pid"), st.get("port")))
+            return True
         time.sleep(0.5)
     return False
 
 
 def _daemon_segment(in_png, out_png, timeout_s=300):
     """Send a segment request to the daemon; return (ok, error)."""
+    st = _read_state()
+    if st is None:
+        return False, "no daemon state file"
     try:
-        with open(DAEMON_STATE, "r", encoding="utf-8") as fh:
-            port = int(json.load(fh)["port"])
+        port = int(st["port"])
     except Exception as e:
-        return False, "no daemon state: %r" % e
+        return False, "bad daemon state: %r" % e
     try:
         s = socket.create_connection(("127.0.0.1", port), timeout=10)
     except Exception as e:
@@ -307,6 +361,98 @@ def _daemon_segment(in_png, out_png, timeout_s=300):
             s.close()
         except Exception:
             pass
+
+
+def _daemon_shutdown(state):
+    """Ask a specific daemon (per its state dict) to exit (best effort).
+
+    The daemon holds the segmentation model in RAM (onnxruntime keeps a
+    multi-GB memory arena alive until process exit).  Per user
+    requirement the daemon must NOT linger after masking is done, so we
+    tell it to exit right away; the next Select Subject run spawns a
+    fresh daemon (the ~15-20 s model load is the price).  The daemon's
+    own 5-minute idle timeout is the backstop if this request never gets
+    through.
+    """
+    try:
+        port = int(state["port"])
+    except Exception:
+        return
+    try:
+        s = socket.create_connection(("127.0.0.1", port), timeout=10)
+        try:
+            s.sendall((json.dumps({"cmd": "shutdown"}) + "\n")
+                      .encode("utf-8"))
+            s.settimeout(15)
+            buf = b""
+            while not buf.endswith(b"\n"):
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                buf += chunk
+            log("daemon shutdown sent")
+        finally:
+            s.close()
+    except Exception as e:
+        dbg("daemon shutdown not sent (%r); idle timeout backstops" % e)
+
+
+def _daemon_hardkill(state):
+    """Force-kill the daemon named by the state file (best effort).
+
+    Used when a daemon is unresponsive -- wedged mid-segment, crashed,
+    or stuck mid-exit.  Per user requirement a rapid second Select
+    Subject run kills the old daemon and spawns a fresh one.
+    taskkill /F /T on Windows (kills the daemon and any child, no
+    parent relationship required); SIGKILL on POSIX.
+    """
+    try:
+        pid = int(state.get("pid", -1))
+    except Exception:
+        return False
+    if pid <= 0:
+        return False
+    try:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=10)
+        else:
+            os.kill(pid, 9)
+        log("daemon %d hard-killed" % pid)
+        return True
+    except Exception as e:
+        dbg("daemon hard-kill of pid %s failed: %r" % (pid, e))
+        return False
+
+
+def _flush_selection_display():
+    """Force GIMP's displays to repaint the selection AFTER this PDB call.
+
+    GIMP's display shell defers repaints while a PDB operation is
+    running (the progress-bar busy state), so a Gimp.displays_flush()
+    called inside the plug-in often lands before the display is willing
+    to draw -- the marching-ants border never gets painted live.  This
+    schedules a one-shot GLib timeout that fires on the main loop once
+    the operation has fully returned, then flushes all displays and
+    presents the default one.
+    """
+    def _do_flush():
+        try:
+            Gimp.displays_flush()
+        except Exception:
+            pass
+        try:
+            disp = Gimp.default_display()
+            if disp is not None:
+                disp.present()
+        except Exception:
+            pass
+        return False
+    try:
+        GLib.timeout_add(200, _do_flush)
+    except Exception:
+        pass
 
 
 class SelectSubject(Gimp.PlugIn):
@@ -459,6 +605,14 @@ class SelectSubject(Gimp.PlugIn):
                 used_daemon = d_ok
                 if not d_ok:
                     dbg("daemon segment failed (%r); trying one-shot" % d_err)
+                else:
+                    # Release the multi-GB model RAM now instead of letting
+                    # the daemon idle for minutes; the next run spawns a
+                    # fresh daemon (or kills a stale one).  Best effort --
+                    # the daemon's own idle timeout is the backstop.
+                    st = _read_state()
+                    if st is not None:
+                        _daemon_shutdown(st)
 
             if not used_daemon:
                 cmd = [_VENV_PYTHON, _ML_WORKER, temp_in, temp_out]
@@ -535,6 +689,12 @@ class SelectSubject(Gimp.PlugIn):
             Gimp.displays_flush()
 
             _dbg_write("SUCCESS", image, None, None)
+            # The selection IS on the image (it survives save/reload), but
+            # the display shell deferred its repaint while the PDB op was
+            # running, so the ants above may never have been painted.
+            # Force one more flush on the main loop AFTER this call has
+            # returned and the progress bar is gone.
+            _flush_selection_display()
             return procedure.new_return_values(
                 Gimp.PDBStatusType.SUCCESS, GLib.Error())
 
