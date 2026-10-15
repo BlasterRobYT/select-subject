@@ -13,14 +13,19 @@ this plug-in runs identically under both.
 ## What it does
 1. Duplicates the image and **flattens only the visible layers** (a copy —
    your document is untouched).
-2. Runs **BRIA RMBG-2.0** on the composite via a **persistent daemon**
-   (the model stays in RAM, so repeated runs are fast).
+2. Runs **BRIA RMBG-2.0** on the composite via a **short-lived local
+   daemon** (it exits right after each selection, releasing the model's
+   RAM).
 3. Converts the alpha mask back into a **GIMP selection** on the original
    image.
 
-**Speed:** ~25 s cold (first run, model load) → **~12 s per 1080p image**
-afterwards. Inference is **CPU by default** (onnxruntime CPU) — no GPU
-needed. On Linux with an AMD GPU you can opt into GPU acceleration
+**Speed:** ~25–40 s per 1080p image on CPU: ~15–25 s to load the model
+into a fresh daemon, then ~10–15 s to segment + matte. Because the daemon
+is short-lived, every run pays the model load (warm loads after the first
+are faster than a cold start after a reboot). A rare case is fast: if the
+previous selection *failed* and the daemon is still warm, a retry reuses
+it. Inference is **CPU by default** (onnxruntime CPU) — no GPU needed.
+On Linux with an AMD GPU you can opt into GPU acceleration
 (**MIGraphX/ROCm** build, see *Install (Linux)* below); NVIDIA cards can
 use the `onnxruntime-gpu` build.
 
@@ -160,7 +165,7 @@ both — no PhotoGIMP-specific code path exists.
 | File | Role |
 |---|---|
 | `select-subject.py` | GIMP menu command; composites, talks to daemon |
-| `select-subject-daemon.py` | Persistent ML daemon (TCP loopback, line-JSON) |
+| `select-subject-daemon.py` | Short-lived ML daemon (one segment, then exits; TCP loopback, line-JSON) |
 | `select-subject-worker.py` | One-shot ML fallback (no daemon) |
 | `install.ps1` / `install.bat` | Standalone installer |
 | `uninstall.ps1` / `uninstall.bat` | One-click uninstaller |
@@ -169,8 +174,10 @@ both — no PhotoGIMP-specific code path exists.
 | `requirements.txt` | Exact ML package pins (CPU build — the `--rocm` path installs `onnxruntime-migraphx` instead) |
 
 ## Notes & troubleshooting
-- **First run is slow** (model load ~14 s). That's one-time per daemon
-  lifetime; the daemon idles up to 20 min then exits.
+- **Each run takes ~15–25 s to load the model** — the daemon is
+  short-lived (it exits right after the selection so the ~6 GB of model
+  RAM is released). Orphaned daemons backstop-exit after 5 min idle or
+  2 h total.
 - **Model check:** on every daemon start the plug-in checks rembg's cache
   for the model and logs `model already downloaded: ... (skipping
   download)` or `downloading bria-rmbg.onnx (one-time, ~1 GB)` — so the

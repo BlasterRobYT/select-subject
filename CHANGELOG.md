@@ -3,9 +3,24 @@
 All notable changes to **Select Subject** are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.1.0] - 2026-10-15
 
 ### Added
+- **Short-lived daemon with explicit lifecycle:** the daemon now exits
+  immediately after each selection (the plug-in sends `shutdown` after a
+  successful segment), releasing the model's RAM (~1.2 GB steady state,
+  ~6.2 GB peak during the forward pass) back to the OS. Orphaned daemons
+  backstop-exit after 5 min idle or 2 h total.
+- **Rapid re-run policy:** a second "Select Subject" run probes the
+  previous daemon — if it is alive and responsive (e.g. the previous
+  segment failed), it is reused with no model reload. Otherwise: graceful
+  shutdown → hard-kill (`taskkill /F /T /PID` on Windows, `SIGKILL` on
+  POSIX) → stale state file removed → fresh daemon spawned. Rapid re-runs
+  no longer fight a dying daemon or fall back silently to the slow
+  one-shot worker.
+- State file handling is now read-then-close-then-unlink (Windows cannot
+  delete a file with an open handle), with a pid-match check so a
+  replacement daemon's state file is never deleted.
 - **Linux support (Windows + Linux):** the plug-in now documents and supports
   a standard Linux install (venv at `~/GIMP/select-subject-env`, plug-in
   files in `~/.config/GIMP/<ver>/plug-ins/select-subject/`). The daemon and
@@ -32,6 +47,15 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   to watch).
 
 ### Changed
+- **Model RAM is released between runs** (in 1.0.0 the daemon stayed
+  alive with the model loaded, so follow-up runs were fast but ~6 GB of
+  RAM stayed in use). Every run now pays ~15–25 s of model load; a warm
+  load is faster than a cold start after a reboot.
+- The daemon disables the ORT CPU memory arena
+  (`enable_cpu_mem_arena=False` + `enable_mem_pattern=True`) so arena
+  memory is actually returned to the OS on process exit. Note: in
+  onnxruntime 1.31 the attribute is `enable_cpu_mem_arena` (the old
+  `enable_mem_arena` raises `AttributeError`).
 - **ML venv discovery is cross-platform:** `Scripts\python.exe` on Windows,
   `bin/python3` (falling back to `bin/python`) on Linux. Removed the
   hardcoded developer-only Windows path; the `~/GIMP/select-subject-env`
@@ -41,6 +65,14 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   provider selection is identical on both code paths.
 
 ### Fixed
+- **Marching ants after the selection:** the selection was produced while
+  the progress bar was still open, so GIMP suppressed the redraw; the
+  plug-in now schedules `Gimp.displays_flush()` +
+  `Gimp.default_display().present()` via `GLib.timeout_add(200, ...)`
+  just before the PDB call returns.
+- A wedged (crashed) daemon left a stale state file that could block or
+  confuse the next run; such daemons are now detected (ping timeout) and
+  hard-killed before a fresh daemon is spawned.
 - **Crash on the mask-compositing step:** a reversed `Gegl.Buffer.copy`
   wrote tiles into the wrong drawable (removed temp layer), tripping
   `gimp_plug_in_handle_tile_put` and making GIMP kill the plug-in's child
@@ -93,4 +125,5 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - onnxruntime is CPU-only: expect ~25 s cold start (model load) and ~12 s per
   1080p image afterwards; matting adds negligible time on clean renders.
 
+[1.1.0]: https://github.com/BlasterRobYT/select-subject/releases/tag/1.1.0
 [1.0.0]: https://github.com/BlasterRobYT/select-subject/releases/tag/1.0.0
