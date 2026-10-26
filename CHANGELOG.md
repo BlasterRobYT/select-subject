@@ -3,6 +3,29 @@
 All notable changes to **Select Subject** are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] - 2026-10-26
+
+### Added
+- **AMD Radeon GPU acceleration on Windows** (DirectML):
+  - `setup-ml-venv.bat --amd` (alias `--dml`) — removes the CPU
+    `onnxruntime` and installs `onnxruntime-directml` (1.24.4), then
+    verifies `DmlExecutionProvider` is available before finishing.
+  - `install.ps1 -Amd` — one-click install with the DirectML build
+    (same steps as the CPU install, plus the provider check before
+    GIMP registration).
+  - Daemon and worker now auto-detect `DmlExecutionProvider`
+    (priority: MIGraphX → DirectML → ROCm → CUDA, CPU fallback always),
+    so a DirectML build is actually used instead of silently falling
+    back to CPU (rembg's own provider detection does not look for DML
+    providers).
+  - README: new "GPU inference on AMD (Windows — DirectML)" section;
+    speed/install/files/notes updated for the `-Amd` / `--amd` paths.
+
+### Changed
+- `requirements.txt` — documents the onnxruntime build swaps (DirectML
+  for AMD/Windows, MIGraphX for AMD/Linux, NVIDIA) with the pinned
+  DirectML version.
+
 ## [1.1.0] - 2026-10-15
 
 ### Added

@@ -42,17 +42,19 @@ def _segment_kwargs():
 def _pick_providers():
     """GPU execution-provider list if a GPU onnxruntime build is installed,
     else None (rembg picks CPU).  Same logic as the daemon -- duplicated
-    here because dashed module names can't be imported directly.  MIGraphX
-    is checked first; rembg's auto-detect misses 'MIGraphXExecutionProvider'
-    and would fall back to CPU on AMD's current GPU wheels.
+    here because dashed module names can't be imported directly.
+    Priority: MIGraphX (AMD Linux wheels), DirectML (AMD Radeon / any
+    DirectX-12 GPU on Windows), ROCm, CUDA.  rembg's auto-detect misses
+    both 'MIGraphXExecutionProvider' and 'DmlExecutionProvider' and would
+    silently fall back to CPU on AMD GPU wheels.
     """
     try:
         import onnxruntime as ort
     except Exception:
         return None
     avail = set(ort.get_available_providers())
-    for ep in ("MIGraphXExecutionProvider", "ROCMExecutionProvider",
-               "CUDAExecutionProvider"):
+    for ep in ("MIGraphXExecutionProvider", "DmlExecutionProvider",
+               "ROCMExecutionProvider", "CUDAExecutionProvider"):
         if ep in avail:
             return [ep, "CPUExecutionProvider"]
     return None

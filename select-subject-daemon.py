@@ -69,18 +69,22 @@ def _pick_providers():
     """Return an explicit execution-provider list when a GPU build of
     onnxruntime is installed, else None (let rembg decide -- i.e. CPU).
 
-    MIGraphX is checked first: AMD's current GPU wheels
-    (onnxruntime-migraphx) register 'MIGraphXExecutionProvider', while
-    rembg's own auto-detect only looks for 'ROCMExecutionProvider' -- so
-    without this, those wheels would silently fall back to CPU.
+    Priority order:
+      * MIGraphX -- AMD's current GPU build on Linux (onnxruntime-migraphx);
+        rembg's own auto-detect misses 'MIGraphXExecutionProvider' and would
+        silently fall back to CPU on those wheels, so it is checked first.
+      * DirectML -- any DirectX-12 GPU (AMD Radeon on Windows via the
+        onnxruntime-directml build); rembg's auto-detect does not look for
+        'DmlExecutionProvider' either.
+      * then ROCm, then CUDA (NVIDIA), with CPU fallback.
     """
     try:
         import onnxruntime as ort
     except Exception:
         return None
     avail = set(ort.get_available_providers())
-    for ep in ("MIGraphXExecutionProvider", "ROCMExecutionProvider",
-               "CUDAExecutionProvider"):
+    for ep in ("MIGraphXExecutionProvider", "DmlExecutionProvider",
+               "ROCMExecutionProvider", "CUDAExecutionProvider"):
         if ep in avail:
             return [ep, "CPUExecutionProvider"]
     return None

@@ -25,9 +25,12 @@ is short-lived, every run pays the model load (warm loads after the first
 are faster than a cold start after a reboot). A rare case is fast: if the
 previous selection *failed* and the daemon is still warm, a retry reuses
 it. Inference is **CPU by default** (onnxruntime CPU) — no GPU needed.
-On Linux with an AMD GPU you can opt into GPU acceleration
-(**MIGraphX/ROCm** build, see *Install (Linux)* below); NVIDIA cards can
-use the `onnxruntime-gpu` build.
+GPU acceleration is supported when your `onnxruntime` build provides a
+GPU provider — the daemon picks it up automatically (always with CPU
+fallback): **AMD Radeon** on Windows via the `onnxruntime-directml`
+build (see *Install (one-click)* and *GPU inference on AMD (Windows —
+DirectML)*), AMD on Linux via `onnxruntime-migraphx` (*Install (Linux)*),
+NVIDIA via `onnxruntime-gpu`.
 
 ## Requirements
 - **Windows x64 or Linux x64** (Ubuntu/Debian, Arch, Fedora, …)
@@ -49,6 +52,11 @@ Double-click **`install.bat`** (or run
 
 > Tip: if the model was already downloaded (e.g. from a previous install),
 > re-run with `-SkipModel` to skip the ~980 MB download.
+>
+> **AMD Radeon GPU (Windows):** run `install.ps1 -Amd` instead of
+> `install.bat` — same steps, but it installs the `onnxruntime-directml`
+> build and verifies `DmlExecutionProvider` before finishing (see *GPU
+> inference on AMD (Windows — DirectML)* below).
 
 ## Install (Linux)
 
@@ -106,6 +114,27 @@ show GPU utilization while a selection runs.
 **NVIDIA:** install `onnxruntime-gpu` into the venv instead; the plug-in
 picks CUDA up the same way. **No supported GPU?** CPU inference is the
 reliable default and needs none of the above.
+
+### GPU inference on AMD (Windows — DirectML)
+
+DirectML is Microsoft's cross-vendor GPU stack: any DirectX-12 GPU — AMD
+Radeon, Intel Arc, … — runs onnxruntime through it, so no vendor driver
+stack or ROCm install is required.
+
+- **Windows 10/11 x64** + a current AMD Adrenalin GPU driver (WDDM,
+  DirectX 12).
+- Build/refresh the venv with the AMD build:
+
+      setup-ml-venv.bat --amd            (alias: --dml)
+
+  This removes the CPU `onnxruntime`, installs
+  `onnxruntime-directml==1.24.4`, and verifies that
+  `DmlExecutionProvider` is available before finishing.
+- No further setup: the daemon detects `DmlExecutionProvider`
+  automatically and always falls back to CPU if anything errors.
+  Confirm in the daemon log line `active providers: ...` (it should read
+  `DmlExecutionProvider, CPUExecutionProvider`), and watch GPU utilization
+  in the AMD Adrenalin overlay while a selection runs.
 
 ## Uninstall (one-click)
 Double-click **`uninstall.bat`** (or run
@@ -170,8 +199,8 @@ both — no PhotoGIMP-specific code path exists.
 | `install.ps1` / `install.bat` | Standalone installer |
 | `uninstall.ps1` / `uninstall.bat` | One-click uninstaller |
 | `portable.ps1` | Portable bundle builder |
-| `setup-ml-venv.sh` / `setup-ml-venv.bat` | ML venv setup (Linux: `--rocm` flag for AMD GPU; Windows: CPU) |
-| `requirements.txt` | Exact ML package pins (CPU build — the `--rocm` path installs `onnxruntime-migraphx` instead) |
+| `setup-ml-venv.sh` / `setup-ml-venv.bat` | ML venv setup (Linux: `--rocm` flag for AMD GPU; Windows: `--amd`/`--dml` flag for AMD Radeon via DirectML, CPU default) |
+| `requirements.txt` | Exact ML package pins (CPU build — GPU: swap in `onnxruntime-directml` (AMD/Windows) or `onnxruntime-migraphx` (AMD/Linux), as noted in the file) |
 
 ## Notes & troubleshooting
 - **Each run takes ~15–25 s to load the model** — the daemon is
@@ -184,7 +213,8 @@ both — no PhotoGIMP-specific code path exists.
   ~1 GB fetch happens exactly once per machine.
 - **Which GPU/CPU is actually in use?** The daemon log prints
   `active providers: ...` at startup (e.g. `MIGraphXExecutionProvider,
-  CPUExecutionProvider` or plain `CPUExecutionProvider`).
+  CPUExecutionProvider`, `DmlExecutionProvider, CPUExecutionProvider`,
+  or plain `CPUExecutionProvider`).
 - **No console windows** should appear during normal use.
 - **Daemon log:** `%TEMP%\select_subject_daemon.log` (Windows) or
   `/tmp/select_subject_daemon.log` (Linux) — check it if a selection is

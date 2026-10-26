@@ -17,12 +17,14 @@
   Usage (double-click .bat, or from PowerShell):
       powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
       powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -SkipModel
+      powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 -Amd
 
   Idempotent: safe to re-run; it updates the plug-in files and fills any
   missing pieces without breaking a working install.
 #>
 param(
     [switch]$SkipModel,
+    [switch]$Amd,
     [string]$VenvDir = "$env:USERPROFILE\GIMP\select-subject-env"
 )
 
@@ -98,7 +100,20 @@ if (-not (Test-Path $venvPip)) {
 if ($LASTEXITCODE -ne 0) { throw "pip self-upgrade failed" }
 Write-Step "Installing ML packages (rembg / onnxruntime / ...) ..."
 & $venvPy -m pip install -r $REQ --quiet
-if ($LASTEXITCODE -ne 0) { throw "pip install -r requirements.txt failed" }
+if ($LASTEXITCODE -ne 0) { throw "ML install failed" }
+if ($Amd) {
+    Write-Step "Switching onnxruntime to the DirectML build (AMD Radeon GPU) ..."
+    # onnxruntime-directml installs into the same site-packages\onnxruntime
+    # tree as the CPU build -- last install wins the DLLs -- so remove every
+    # variant first, then install the DirectML wheel.
+    & $venvPy -m pip uninstall -y onnxruntime onnxruntime-gpu onnxruntime-directml
+    if ($LASTEXITCODE -ne 0) { throw "Failed to remove CPU onnxruntime" }
+    & $venvPy -m pip install "onnxruntime-directml==1.24.4" --quiet
+    if ($LASTEXITCODE -ne 0) { throw "onnxruntime-directml install failed" }
+    & $venvPy -c "import sys, onnxruntime as o; sys.exit(0 if 'DmlExecutionProvider' in o.get_available_providers() else 1)"
+    if ($LASTEXITCODE -ne 0) { throw "DirectML build installed but DmlExecutionProvider missing" }
+    Write-Ok "AMD Radeon (DirectML) GPU acceleration configured"
+}
 Write-Ok "ML packages installed"
 
 # ---------------------------------------------------------------- 3. model
@@ -139,7 +154,7 @@ if ($installed -eq 0) {
 
 # --------------------------------------------------------------- 5. verify
 Write-Step "Verification (ML stack imports in venv) ..."
-& $venvPy -c "import rembg, onnxruntime, numpy, PIL; from rembg.sessions import BriaRmBgSession as B; print('rembg + onnxruntime', onnxruntime.get_version(), 'OK')"
+& $venvPy -c "import rembg, onnxruntime, numpy, PIL; from rembg.sessions import BriaRmBgSession as B; print('rembg + onnxruntime', onnxruntime.get_version(), '| providers', onnxruntime.get_available_providers(), 'OK')"
 if ($LASTEXITCODE -ne 0) { throw "verification failed" }
 
 Write-Host ""
