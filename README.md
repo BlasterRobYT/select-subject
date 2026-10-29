@@ -29,7 +29,7 @@ GPU acceleration is supported when your `onnxruntime` build provides a
 GPU provider — the daemon picks it up automatically (always with CPU
 fallback): **AMD Radeon** on Windows via the `onnxruntime-directml`
 build (see *Install (one-click)* and *GPU inference on AMD (Windows —
-DirectML)*), AMD on Linux via `onnxruntime-migraphx` (*Install (Linux)*),
+DirectML)*), AMD on Linux via `onnxruntime-rocm` (*Install (Linux)*),
 NVIDIA via `onnxruntime-gpu`.
 
 ## Requirements
@@ -64,7 +64,7 @@ Use the bundled script (Ubuntu/Debian, Arch, Fedora, …):
 
 ```bash
 ./setup-ml-venv.sh            # CPU inference (default)
-./setup-ml-venv.sh --rocm     # AMD GPU inference (MIGraphX, see below)
+./setup-ml-venv.sh --rocm     # AMD GPU inference (ROCm, see below)
 ```
 
 It creates the venv at `~/GIMP/select-subject-env` (override with
@@ -84,29 +84,40 @@ first and skips the download when the model is already there (no skip
 flag needed). Cache: `~/.rembg/models/bria-rmbg/` (override with
 `REMBG_HOME`).
 
-### GPU inference on AMD (ROCm / MIGraphX)
+### GPU inference on AMD (Linux — ROCm)
 
-`--rocm` installs `onnxruntime-migraphx` (AMD's current GPU build of
-onnxruntime, from PyPI) instead of the CPU build. Requirements:
+`--rocm` installs `onnxruntime-rocm` (AMD's ROCm GPU build of onnxruntime,
+from PyPI) instead of the CPU build. Requirements (tested on Arch with
+ROCm 7.2, CPython 3.14, onnxruntime-rocm 1.22.2.post3):
 
 - **Linux only** (the wheels are `manylinux x86_64`);
-- **CPython 3.11–3.13** (AMD ships `cp310`–`cp313` wheels). On Arch the
-  default `python3` is newer, so the script looks for
-  `sudo pacman -S python3.12`;
-- the **system ROCm 7.x stack** for your distro. On Arch:
+- **CPython 3.11–3.14** — onnxruntime-rocm 1.22.x ships `cp310`–`cp314`
+  manylinux wheels only (no source distro); the script picks the
+  newest of 3.14 → 3.11 it finds;
+- the **system ROCm 7.x runtime** (provides `libamdhip64`, `librocblas`,
+  `libhipblas`, `libMIOpen`, `libhiprtc`, `libamd_comgr`,
+  `libhsa-runtime64`, …). On Arch:
 
   ```bash
-  sudo pacman -S rocm-hip-sdk rocm-opencl-sdk
+  sudo pacman -S rocm-hip-sdk rocblas hipblas hipfft rocsolver rocrand
   sudo usermod -aG render,video "$USER"   # log out and back in after
   rocm-smi                                # sanity check
   ```
 
-- **RDNA3** cards (RX 7000 series, e.g. 7900 XTX) that fall back to CPU:
-  add `export HSA_OVERRIDE_GFX_VERSION=11.0.0` to your shell rc before
-  starting GIMP.
+  Other distros: install the ROCm 7.x SDK/runtime packages for your
+  distro, or AMD's `rocm` tarball (extracted so the libraries land in
+  `/opt/rocm/lib`).
 
-The plug-in detects the MIGraphX provider automatically (it checks for
-`MIGraphXExecutionProvider`, which rembg's own auto-detect would miss)
+The setup script bakes the runtime environment into the venv's
+`python`/`python3` launchers — `LD_LIBRARY_PATH` pointing at
+`/opt/rocm/lib` (plus the `migraphx`/`hip` sub-dirs when present) and
+`HSA_OVERRIDE_GFX_VERSION=11.0.0` — so no extra shell setup is needed
+when GIMP spawns the daemon. The override matters on **RDNA3** cards
+(RX 7000 series, e.g. 7900 XTX): without it those cards can silently
+fall back to CPU.
+
+The plug-in detects the ROCm provider automatically (it checks for
+`ROCMExecutionProvider` explicitly, which rembg's own auto-detect misses)
 and always falls back to CPU. The daemon log line
 `active providers: ...` shows what actually got used; `rocm-smi` should
 show GPU utilization while a selection runs.
@@ -200,7 +211,7 @@ both — no PhotoGIMP-specific code path exists.
 | `uninstall.ps1` / `uninstall.bat` | One-click uninstaller |
 | `portable.ps1` | Portable bundle builder |
 | `setup-ml-venv.sh` / `setup-ml-venv.bat` | ML venv setup (Linux: `--rocm` flag for AMD GPU; Windows: `--amd`/`--dml` flag for AMD Radeon via DirectML, CPU default) |
-| `requirements.txt` | Exact ML package pins (CPU build — GPU: swap in `onnxruntime-directml` (AMD/Windows) or `onnxruntime-migraphx` (AMD/Linux), as noted in the file) |
+| `requirements.txt` | Exact ML package pins (CPU build — GPU: swap in `onnxruntime-directml` (AMD/Windows) or `onnxruntime-rocm` (AMD/Linux), as noted in the file) |
 
 ## Notes & troubleshooting
 - **Each run takes ~15–25 s to load the model** — the daemon is
@@ -212,7 +223,7 @@ both — no PhotoGIMP-specific code path exists.
   download)` or `downloading bria-rmbg.onnx (one-time, ~1 GB)` — so the
   ~1 GB fetch happens exactly once per machine.
 - **Which GPU/CPU is actually in use?** The daemon log prints
-  `active providers: ...` at startup (e.g. `MIGraphXExecutionProvider,
+  `active providers: ...` at startup (e.g. `ROCMExecutionProvider,
   CPUExecutionProvider`, `DmlExecutionProvider, CPUExecutionProvider`,
   or plain `CPUExecutionProvider`).
 - **No console windows** should appear during normal use.

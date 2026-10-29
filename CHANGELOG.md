@@ -3,6 +3,31 @@
 All notable changes to **Select Subject** are documented here.
 Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.0] - 2026-10-28
+
+### Changed
+
+- **The AMD GPU path on Linux is now `onnxruntime-rocm`
+  (ROCm ExecutionProvider)**, replacing the discontinued
+  `onnxruntime-migraphx` recommendation. Verified working combination:
+  RX 7900 XTX + ROCm 7.2 + CPython 3.14, onnxruntime 1.22.2.post3,
+  providers active `ROCMExecutionProvider, CPUExecutionProvider`.
+- `setup-ml-venv.sh --rocm` now picks CPython 3.14 → 3.11 (the wheel
+  series of onnxruntime-rocm 1.22.x), swaps the CPU `onnxruntime` for
+  the ROCm build, and bakes `LD_LIBRARY_PATH` (to `/opt/rocm/lib`,
+  plus `migraphx`/`hip` sub-dirs when present) and
+  `HSA_OVERRIDE_GFX_VERSION=11.0.0` into the venv's `python`/`python3`
+  launchers — so the daemon spawned by GIMP finds the GPU stack with no
+  extra shell setup.
+- README: the AMD Linux GPU section now documents the system-ROCm
+  install (including the Arch package list), matching the path that
+  actually works today.
+
+### Notes
+
+- Daemon/worker Python needed no changes — both already auto-detect
+  `ROCMExecutionProvider` (checked after DirectML, before CUDA).
+
 ## [1.2.0] - 2026-10-26
 
 ### Added
